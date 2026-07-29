@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Cyber Dash - Web Edition</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background-color: #0f0a1e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: monospace;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        canvas {
+            background-color: #141419;
+            max-width: 100vw;
+            max-height: 100vh;
+            object-fit: contain;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+            aspect-ratio: 16/9;
+            display: none; /* Hidden until name is entered */
+        }
+        /* Name Prompt UI */
+        #namePrompt {
+            position: absolute;
+            background: rgba(20, 20, 25, 0.95);
+            border: 2px solid #00ffff;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            color: white;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.4);
+            z-index: 100;
+        }
+        #namePrompt h2 { margin-bottom: 20px; color: #00ffff; }
+        #playerNameInput {
+            padding: 10px;
+            font-size: 18px;
+            width: 100%;
+            margin-bottom: 20px;
+            background: #0f0a1e;
+            border: 1px solid #ff007f;
+            color: white;
+            text-align: center;
+            font-family: monospace;
+            outline: none;
+        }
+        #startBtn {
+            padding: 10px 20px;
+            font-size: 18px;
+            background: #00ffff;
+            color: #0f0a1e;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Name Input UI -->
+<div id="namePrompt">
+    <h2>ENTER YOUR NAME</h2>
+    <input type="text" id="playerNameInput" placeholder="Player 1" maxlength="10" autocomplete="off">
+    <br>
+    <button id="startBtn">ENTER GAME</button>
+</div>
+
+<canvas id="gameCanvas" width="800" height="450"></canvas>
+
+<script>
+    // --- Leaderboard & Name Logic ---
+    let currentPlayerName = "GUEST";
+    let leaderboard = JSON.parse(localStorage.getItem("cyberDashLeaderboard")) || [];
+
+    const namePrompt = document.getElementById("namePrompt");
+    const nameInput = document.getElementById("playerNameInput");
+    const startBtn = document.getElementById("startBtn");
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // Check if name already exists in local storage
+    if(localStorage.getItem("lastPlayerName")) {
+        nameInput.value = localStorage.getItem("lastPlayerName");
+    }
+
+    startBtn.addEventListener("click", () => {
+        let name = nameInput.value.trim();
+        if(name === "") name = "GUEST";
+        currentPlayerName = name.toUpperCase();
+        localStorage.setItem("lastPlayerName", currentPlayerName);
+        
+        namePrompt.style.display = "none";
+        canvas.style.display = "block";
+        
+        // Initialize Audio context only after user interaction
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+    });
+
+    function saveScore(score) {
+        let finalScore = Math.floor(score);
+        leaderboard.push({ name: currentPlayerName, score: finalScore });
+        // Sort highest to lowest
+        leaderboard.sort((a, b) => b.score - a.score);
+        // Keep only top 5
+        leaderboard = leaderboard.slice(0, 5);
+        // Save to local storage
+        localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
+    }
+
+    // --- Audio System (Web Audio API) ---
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+
+    function playSound(type) {
+        if (audioCtx.state === 'suspended') return; // prevent error before interaction
+        
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        const now = audioCtx.currentTime;
+        
+        if (type === "thud") { 
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.exponentialRampToValueAtTime(10, now + 0.15);
+            gainNode.gain.setValueAtTime(1, now);
+            gainNode.gain.linearRampToValueAtTime(0, now + 0.15);
+            osc.start(now); osc.stop(now + 0.15);
+        } else if (type === "ting") { 
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(1200, now);
+            osc.frequency.setValueAtTime(1800, now + 0.03);
+            gainNode.gain.setValueAtTime(0.5, now);
+            gainNode.gain.linearRampToValueAtTime(0, now + 0.15);
+            osc.start(now); osc.stop(now + 0.15);
+        } else if (type === "buzz") { 
+            osc.type = "square";
+            osc.frequency.setValueAtTime(60, now);
+            osc.frequency.linearRampToValueAtTime(50, now + 0.4);
+            gainNode.gain.setValueAtTime(0.5, now);
+            gainNode.gain.linearRampToValueAtTime(0, now + 0.4);
+            osc.start(now); osc.stop(now + 0.4);
+        }
+    }
+
+    // --- Screen Dimensions & Config ---
+    const WIDTH = 800;
+    const HEIGHT = 450;
+    const FLOOR_Y = 380;
+
+    // --- Colors & Themes ---
+    const WHITE = [255, 255, 255];
+    const GOLD = [255, 215, 0];
+    const MENU_BG = [20, 20, 25];
+    const DANGER_COLOR = [255, 0, 100];
+    const AIR_OBSTACLE = [255, 255, 0];
+    const DEV_COLOR = [50, 255, 100];
+
+    function rgb(arr) { return `rgb(${arr[0]}, ${arr[1]}, ${arr[2]})`; }
+
+    const themes = [
+        {bg: [15, 10, 30], moon: [255, 0, 128], b_front: [20, 15, 40], b_back: [30, 20, 50]},
+        {bg: [40, 10, 15], moon: [255, 200, 0], b_front: [35, 10, 10], b_back: [50, 20, 20]},
+        {bg: [10, 30, 25], moon: [255, 255, 255], b_front: [15, 40, 30], b_back: [25, 50, 40]},
+        {bg: [10, 15, 40], moon: [0, 255, 255], b_front: [15, 20, 50], b_back: [20, 30, 60]}
+    ];
+
+    // Game States & Variables
+    let state = "MENU";
+    let coins = parseInt(localStorage.getItem("cyberDashCoins")) || 0; // Saved Coins
+    let score = 0;
+    let time_ticks = 0;
+
+    // Particles (Parallax)
+    let bg_particles = [];
+    for(let i=0; i<50; i++) {
+        bg_particles.push({ x: Math.random() * WIDTH, y: Math.random() * HEIGHT, s: 1.5 + Math.random() * 2.5 });
+    }
+
+    let dev_mode = false;
+    let dev_sequence = [];
+    let dev_sequence_timer = 0;
+    const btn_dev_speed_down = {x: WIDTH/2 - 200, y: 15, w: 75, h: 40};
+    const btn_dev_speed_up = {x: WIDTH/2 - 115, y: 15, w: 75, h: 40};
+    const btn_dev_coin_up = {x: WIDTH/2 - 30, y: 15, w: 80, h: 40};
+    const btn_dev_exit = {x: WIDTH/2 + 60, y: 15, w: 110, h: 40};
+
+    // --- Shop System ---
+    let unlocked_shapes = JSON.parse(localStorage.getItem("cyberDashShapes")) || ["CUBE"];
+    let equipped_shape = localStorage.getItem("cyberDashEqShape") || "CUBE";
+    let unlocked_colors = JSON.parse(localStorage.getItem("cyberDashColors")) || ["[0, 255, 255]"];
+    let equipped_color = JSON.parse(localStorage.getItem("cyberDashEqColor")) || [0, 255, 255];
+    let magnet_unlocked = localStorage.getItem("cyberDashMagnet") === "true";
+
+    function saveShopData() {
+        localStorage.setItem("cyberDashCoins", coins);
+        localStorage.setItem("cyberDashShapes", JSON.stringify(unlocked_shapes));
+        localStorage.setItem("cyberDashEqShape", equipped_shape);
+        localStorage.setItem("cyberDashColors", JSON.stringify(unlocked_colors));
+        localStorage.setItem("cyberDashEqColor", JSON.stringify(equipped_color));
+        localStorage.setItem("cyberDashMagnet", magnet_unlocked);
+    }
+
+    const shop_shapes = {
+        "CUBE": {cost: 0, rect: {x: 100, y: 120, w: 80, h: 80}},
+        "ORB": {cost: 50, rect: {x: 200, y: 120, w: 80, h: 80}},
+        "PYRAMID": {cost: 150, rect: {x: 300, y: 120, w: 80, h: 80}},
+        "DIAMOND": {cost: 300, rect: {x: 400, y: 120, w: 80, h: 80}},
+        "STAR": {cost: 500, rect: {x: 500, y: 120, w: 80, h: 80}},
+        "RING": {cost: 800, rect: {x: 600, y: 120, w: 80, h: 80}}
+    };
+
+    const shop_colors = {
+        "CYAN": {val: [0, 255, 255], cost: 0, rect: {x: 100, y: 260, w: 80, h: 60}},
+        "RED": {val: [255, 50, 50], cost: 100, rect: {x: 200, y: 260, w: 80, h: 60}},
+        "GREEN": {val: [50, 255, 50], cost: 100, rect: {x: 300, y: 260, w: 80, h: 60}},
+        "PINK": {val: [255, 50, 255], cost: 100, rect: {x: 400, y: 260, w: 80, h: 60}},
+        "ORANGE": {val: [255, 128, 0], cost: 200, rect: {x: 500, y: 260, w: 80, h: 60}},
+        "PURPLE": {val: [150, 50, 255], cost: 200, rect: {x: 600, y: 260, w: 80, h: 60}}
+    };
+
+    const btn_magnet = {x: 100, y: 360, w: 250, h: 45};
+    const MAGNET_COST = 1000;
+    const btn_play = {x: 300, y: 200, w: 200, h: 60};
+    const btn_shop = {x: 300, y: 280, w: 200, h: 60};
+    const btn_back = {x: 20, y: 20, w: 100, h: 40};
+
+    // --- Game Variables ---
+    let game_speed = 9.0;
+    const normal_w = 30, normal_h = 60;
+    const duck_w = 50, duck_h = 30;
+    let player_x = 100;
+    let player_y = FLOOR_Y - normal_h;
+    let player_w = normal_w, player_h = normal_h;
+
+    let vel_y = 0;
+    const gravity = 1.1;
+    const jump_power = -17;
+    let is_ducking = false;
+    let duck_timer = 0;
+    const DUCK_DURATION = 35;
+
+    let trail = [];
+    let obstacles = [];
+    let collectible_coins = [];
+    let spawn_timer = 0;
+    let coin_timer = 0;
+    let buildings_back = [];
+    let buildings_front = [];
+
+    function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+    function isInside(pos, r) { return pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h; }
+    function arraysEqual(a1, a2) { return JSON.stringify(a1) === JSON.stringify(a2); }
+
+    function init_buildings(b_list, min_h, max_h) {
+        let last_x = 0;
+        for (let i=0; i<25; i++) {
+            let w = randInt(50, 100);
+            let h = randInt(min_h, max_h);
+            b_list.push({x: last_x, y: FLOOR_Y - h, w: w, h: h});
+            last_x += w;
+        }
+    }
+    init_buildings(buildings_back, 150, 350);
+    init_buildings(buildings_front, 50, 200);
+
+    function update_buildings(b_list, scroll_speed, min_h, max_h) {
+        for (let b of b_list) b.x -= scroll_speed;
+        if (b_list[0].x + b_list[0].w < 0) {
+            b_list.shift();
+            let right_x = b_list[b_list.length - 1].x + b_list[b_list.length - 1].w;
+            b_list.push({x: right_x, y: FLOOR_Y - randInt(min_h, max_h), w: randInt(50, 100), h: randInt(min_h, max_h)});
+        }
+    }
+
+    function spawn_obstacle() {
+        if (randInt(0, 1) === 0) obstacles.push({x: WIDTH, y: FLOOR_Y - 40, w: 30, h: 40, color: DANGER_COLOR});
+        else obstacles.push({x: WIDTH, y: FLOOR_Y - 70, w: 40, h: 35, color: AIR_OBSTACLE});
+    }
+
+    function spawn_coin() {
+        collectible_coins.push({x: WIDTH, y: Math.random() < 0.5 ? FLOOR_Y - 40 : FLOOR_Y - 130, r: 10});
+    }
+
+    function drawRoundRect(x, y, w, h, radius, color) {
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.roundRect(x, y, w, h, radius); ctx.fill();
+    }
+
+    function drawText(text, x, y, size, color, align="left", weight="bold") {
+        ctx.fillStyle = color;
+        ctx.font = `${weight} ${size}px Courier`;
+        ctx.textAlign = align;
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, x, y);
+    }
+
+    function draw_player_shape(skin, p_color, x, y, w, h) {
+        ctx.fillStyle = p_color;
+        if (skin === "CUBE") {
+            ctx.beginPath(); ctx.roundRect(x, y, w, h, 4); ctx.fill();
+            ctx.fillStyle = rgb(WHITE);
+            ctx.beginPath(); ctx.roundRect(x+4, y+4, w-8, h-8, 2); ctx.fill();
+        } else if (skin === "ORB") {
+            ctx.beginPath(); ctx.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = rgb(WHITE);
+            ctx.beginPath(); ctx.ellipse(x+w/2, y+h/2, w/2-4, h/2-4, 0, 0, Math.PI*2); ctx.fill();
+        } else if (skin === "PYRAMID") {
+            ctx.beginPath(); ctx.moveTo(x+w/2, y); ctx.lineTo(x, y+h); ctx.lineTo(x+w, y+h); ctx.fill();
+            ctx.fillStyle = rgb(WHITE);
+            ctx.beginPath(); ctx.moveTo(x+w/2, y+8); ctx.lineTo(x+6, y+h-4); ctx.lineTo(x+w-6, y+h-4); ctx.fill();
+        } else if (skin === "DIAMOND") {
+            ctx.beginPath(); ctx.moveTo(x+w/2, y); ctx.lineTo(x+w, y+h/2); ctx.lineTo(x+w/2, y+h); ctx.lineTo(x, y+h/2); ctx.fill();
+        } else if (skin === "STAR") {
+            ctx.beginPath();
+            ctx.moveTo(x+w/2, y); ctx.lineTo(x+w/2+6, y+h/2-6);
+            ctx.lineTo(x+w, y+h/2); ctx.lineTo(x+w/2+6, y+h/2+6);
+            ctx.lineTo(x+w/2, y+h); ctx.lineTo(x+w/2-6, y+h/2+6);
+            ctx.lineTo(x, y+h/2); ctx.lineTo(x+w/2-6, y+h/2-6); ctx.fill();
+        } else if (skin === "RING") {
+            ctx.strokeStyle = p_color; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.arc(x+w/2, y+h/2, w/2, 0, Math.PI*2); ctx.stroke();
+            ctx.strokeStyle = rgb(WHITE); ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(x+w/2, y+h/2, w/2-4, 0, Math.PI*2); ctx.stroke();
+        }
+    }
+
+    let swipe_start_y = 0;
+    let is_swiping = false;
+    const SWIPE_THRESHOLD = 30;
+
+    function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        let clientX = e.touches ? (e.touches.length > 0 ? e.touches[0].clientX : e.changedTouches[0].clientX) : e.clientX;
+        let clientY = e.touches ? (e.touches.length > 0 ? e.touches[0].clientY : e.changedTouches[0].clientY) : e.clientY;
+        return {
+            x: (clientX - rect.left) * (WIDTH / rect.width),
+            y: (clientY - rect.top) * (HEIGHT / rect.height)
+        };
+    }
+
+    function handleInputStart(e) {
+        if(namePrompt.style.display !== "none") return; // Block input if name prompt is open
+        e.preventDefault();
+        const mouse = getPos(e);
+
+        if (state === "MENU") {
+            if (isInside(mouse, btn_play)) {
+                state = "PLAYING";
+                obstacles = []; collectible_coins = []; trail = [];
+                spawn_obstacle();
+                score = 0; game_speed = 9.0;
+                player_y = FLOOR_Y - normal_h; vel_y = 0; is_ducking = false;
+                dev_mode = false; dev_sequence = []; dev_sequence_timer = 0;
+            } else if (isInside(mouse, btn_shop)) state = "SHOP";
+        } else if (state === "SHOP") {
+            if (isInside(mouse, btn_back)) { state = "MENU"; saveShopData(); }
+            for (let s_name in shop_shapes) {
+                let data = shop_shapes[s_name];
+                if (isInside(mouse, data.rect)) {
+                    if (unlocked_shapes.includes(s_name)) equipped_shape = s_name;
+                    else if (coins >= data.cost) { coins -= data.cost; unlocked_shapes.push(s_name); equipped_shape = s_name; }
+                    saveShopData();
+                }
+            }
+            for (let c_name in shop_colors) {
+                let data = shop_colors[c_name];
+                if (isInside(mouse, data.rect)) {
+                    if (unlocked_colors.includes(JSON.stringify(data.val))) equipped_color = data.val;
+                    else if (coins >= data.cost) { coins -= data.cost; unlocked_colors.push(JSON.stringify(data.val)); equipped_color = data.val; }
+                    saveShopData();
+                }
+            }
+            if (isInside(mouse, btn_magnet) && !magnet_unlocked) {
+                if (coins >= MAGNET_COST) { coins -= MAGNET_COST; magnet_unlocked = true; saveShopData(); }
+            }
+        } else if (state === "GAME_OVER") {
+            state = "MENU";
+        } else if (state === "PLAYING") {
+            if (dev_mode && isInside(mouse, btn_dev_speed_down)) game_speed = Math.max(3.0, game_speed - 1.0);
+            else if (dev_mode && isInside(mouse, btn_dev_speed_up)) game_speed += 1.0;
+            else if (dev_mode && isInside(mouse, btn_dev_coin_up)) { coins += 100; playSound("ting"); }
+            else if (dev_mode && isInside(mouse, btn_dev_exit)) { dev_mode = false; dev_sequence = []; dev_sequence_timer = 0; }
+            else { swipe_start_y = mouse.y; is_swiping = true; }
+        }
+    }
+
+    function handleInputEnd(e) {
+        if(namePrompt.style.display !== "none") return;
+        e.preventDefault();
+        if (state === "PLAYING" && is_swiping) {
+            const mouse = getPos(e);
+            let drag = mouse.y - swipe_start_y;
+            if (drag < -SWIPE_THRESHOLD && player_y > 20) {
+                if (is_ducking) player_y -= (normal_h - duck_h);
+                is_ducking = false; player_w = normal_w; player_h = normal_h;
+                vel_y = jump_power; playSound("thud");
+                if (!dev_mode) { dev_sequence.push("JUMP"); dev_sequence_timer = 1; }
+            } else if (drag > SWIPE_THRESHOLD) {
+                vel_y = 40; is_ducking = true; duck_timer = DUCK_DURATION;
+                player_w = duck_w; player_h = duck_h;
+                if (!dev_mode) { dev_sequence.push("DUCK"); dev_sequence_timer = 1; }
+            }
+            is_swiping = false;
+            if (dev_sequence.length > 3) dev_sequence.shift();
+        }
+    }
+
+    canvas.addEventListener("mousedown", handleInputStart);
+    canvas.addEventListener("mouseup", handleInputEnd);
+    canvas.addEventListener("touchstart", handleInputStart, {passive: false});
+    canvas.addEventListener("touchend", handleInputEnd, {passive: false});
+
+    // --- MAIN GAME LOOP ---
+    function loop(timestamp) {
+        time_ticks = timestamp;
+        ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+        if (state === "PLAYING" && !dev_mode) {
+            if (dev_sequence_timer > 0) {
+                dev_sequence_timer++;
+                if (dev_sequence_timer > 120) { dev_sequence = []; dev_sequence_timer = 0; }
+            }
+            if (dev_sequence.join(',') === "DUCK,DUCK,JUMP") { dev_mode = true; dev_sequence = []; }
+        }
+
+        let current_scroll = (state === "PLAYING") ? game_speed : 2.0;
+        for (let p of bg_particles) {
+            p.x -= p.s * (current_scroll * 0.15);
+            p.y += Math.sin(time_ticks * 0.002 + p.s) * 0.3;
+            if (p.x < -10) { p.x = WIDTH + 10; p.y = Math.random() * HEIGHT; }
+        }
+
+        if (state === "MENU") {
+            ctx.fillStyle = rgb(MENU_BG); ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            for (let p of bg_particles) {
+                ctx.fillStyle = rgb([50, 50, 70]);
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.s, 0, Math.PI*2); ctx.fill();
+            }
+            ctx.strokeStyle = rgb(equipped_color); ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(0, FLOOR_Y); ctx.lineTo(WIDTH, FLOOR_Y); ctx.stroke();
+
+            let float_y = Math.sin(time_ticks * 0.003) * 12;
+            let title_float_y = Math.cos(time_ticks * 0.002) * 6;
+
+            draw_player_shape(equipped_shape, rgb(equipped_color), 360, FLOOR_Y - 80 + float_y, 80, 80);
+            drawText("NEON DASH", 400, 70 + title_float_y, 40, rgb(WHITE), "center");
+            drawText(`Welcome, ${currentPlayerName}`, 400, 110 + title_float_y, 16, rgb(equipped_color), "center");
+
+            drawRoundRect(btn_play.x, btn_play.y, btn_play.w, btn_play.h, 10, rgb(equipped_color));
+            drawRoundRect(btn_shop.x, btn_shop.y, btn_shop.w, btn_shop.h, 10, rgb([80, 80, 90]));
+            drawText("PLAY", btn_play.x + btn_play.w/2, btn_play.y + btn_play.h/2, 24, rgb(MENU_BG), "center");
+            drawText("SHOP", btn_shop.x + btn_shop.w/2, btn_shop.y + btn_shop.h/2, 24, rgb(WHITE), "center");
+            drawText(`COINS: ${coins}`, 20, 30, 16, rgb(GOLD));
+
+            // Draw Local Leaderboard on Menu Screen
+            drawText("TOP 5 LEADERBOARD", 650, 30, 16, rgb(GOLD), "center");
+            if (leaderboard.length === 0) {
+                drawText("No Scores Yet!", 650, 60, 14, rgb(WHITE), "center");
+            } else {
+                for (let i = 0; i < leaderboard.length; i++) {
+                    let yPos = 60 + (i * 25);
+                    drawText(`${i+1}. ${leaderboard[i].name}`, 550, yPos, 14, rgb(WHITE), "left");
+                    drawText(`${leaderboard[i].score}`, 750, yPos, 14, rgb(equipped_color), "right");
+                }
+            }
+
+        } else if (state === "SHOP") {
+            ctx.fillStyle = rgb(MENU_BG); ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            drawRoundRect(btn_back.x, btn_back.y, btn_back.w, btn_back.h, 5, rgb([50, 50, 60]));
+            drawText("< BACK", btn_back.x + btn_back.w/2, btn_back.y + btn_back.h/2, 16, rgb(WHITE), "center");
+            drawText(`SHOP | COINS: ${coins}`, WIDTH/2, 40, 28, rgb(GOLD), "center");
+
+            drawText("SHAPES:", 20, 160, 16, rgb(WHITE));
+            for (let s in shop_shapes) {
+                let data = shop_shapes[s];
+                let bg_c = unlocked_shapes.includes(s) ? [30, 60, 30] : [50, 40, 40];
+                if (equipped_shape === s) bg_c = [100, 100, 30];
+                drawRoundRect(data.rect.x, data.rect.y, data.rect.w, data.rect.h, 10, rgb(bg_c));
+                draw_player_shape(s, rgb(WHITE), data.rect.x + 20, data.rect.y + 10, 40, 40);
+                let txt = equipped_shape === s ? "EQP" : (unlocked_shapes.includes(s) ? "OWN" : data.cost);
+                drawText(txt, data.rect.x + data.rect.w/2, data.rect.y + 65, 14, equipped_shape === s ? rgb(GOLD) : rgb(WHITE), "center");
+            }
+
+            drawText("COLORS:", 20, 290, 16, rgb(WHITE));
+            for (let c in shop_colors) {
+                let data = shop_colors[c];
+                let val_str = JSON.stringify(data.val);
+                let bg_c = unlocked_colors.includes(val_str) ? [30, 60, 30] : [50, 40, 40];
+                if (arraysEqual(equipped_color, data.val)) bg_c = [100, 100, 30];
+                drawRoundRect(data.rect.x, data.rect.y, data.rect.w, data.rect.h, 10, rgb(bg_c));
+                drawRoundRect(data.rect.x + 25, data.rect.y + 10, 30, 30, 5, rgb(data.val));
+                let txt = arraysEqual(equipped_color, data.val) ? "EQP" : (unlocked_colors.includes(val_str) ? "OWN" : data.cost);
+                drawText(txt, data.rect.x + data.rect.w/2, data.rect.y + 50, 14, arraysEqual(equipped_color, data.val) ? rgb(GOLD) : rgb(WHITE), "center");
+            }
+
+            drawText("MODS:", 20, 385, 16, rgb(WHITE));
+            let bg_m = magnet_unlocked ? [100, 100, 30] : [50, 40, 40];
+            drawRoundRect(btn_magnet.x, btn_magnet.y, btn_magnet.w, btn_magnet.h, 10, rgb(bg_m));
+            let m_txt = magnet_unlocked ? "COIN MAGNET: ACTIVE" : `BUY MAGNET: ${MAGNET_COST} C`;
+            drawText(m_txt, btn_magnet.x + btn_magnet.w/2, btn_magnet.y + btn_magnet.h/2, 16, rgb(WHITE), "center");
+
+        } else if (state === "PLAYING") {
+            if (is_ducking) {
+                duck_timer--;
+                if (duck_timer <= 0) { is_ducking = false; player_w = normal_w; player_h = normal_h; if (player_y >= FLOOR_Y - normal_h) player_y = FLOOR_Y - normal_h; }
+            }
+
+            vel_y += gravity; player_y += vel_y;
+            if (player_y < 0) { player_y = 0; if (dev_mode) vel_y = Math.max(0, vel_y); }
+            if (player_y >= FLOOR_Y - player_h) { player_y = FLOOR_Y - player_h; vel_y = 0; }
+
+            trail.push({x: player_x, y: player_y, w: player_w, h: player_h, a: 255});
+            if (trail.length > 10) trail.shift();
+
+            spawn_timer++;
+            if (spawn_timer > Math.max(20, 110 - (game_speed * 5))) { spawn_obstacle(); spawn_timer = 0; }
+            coin_timer++;
+            if (coin_timer > randInt(40, 100)) { spawn_coin(); coin_timer = 0; }
+
+            update_buildings(buildings_back, game_speed * 0.2, 150, 350);
+            update_buildings(buildings_front, game_speed * 0.5, 50, 200);
+
+            let theme_index = Math.floor(score / 1000) % themes.length;
+            let t = themes[theme_index];
+
+            ctx.fillStyle = rgb(t.bg); ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+            for (let p of bg_particles) {
+                let p_color = [Math.min(255, t.b_front[0]+30), Math.min(255, t.b_front[1]+30), Math.min(255, t.b_front[2]+40)];
+                ctx.fillStyle = rgb(p_color);
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.s, 0, Math.PI*2); ctx.fill();
+            }
+
+            ctx.fillStyle = rgb(t.moon); ctx.beginPath(); ctx.arc(WIDTH/2, 200, 80, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = rgb(t.b_back); for (let b of buildings_back) ctx.fillRect(b.x, b.y, b.w, b.h);
+            ctx.fillStyle = rgb(t.b_front); for (let b of buildings_front) ctx.fillRect(b.x, b.y, b.w, b.h);
+
+            ctx.fillStyle = rgb([10, 15, 20]); ctx.fillRect(0, FLOOR_Y, WIDTH, HEIGHT - FLOOR_Y);
+            ctx.strokeStyle = rgb(equipped_color); ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(0, FLOOR_Y); ctx.lineTo(WIDTH, FLOOR_Y); ctx.stroke();
+
+            let hitbox = {x: player_x + 5, y: player_y + 5, w: player_w - 10, h: player_h - 10};
+
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i]; obs.x -= game_speed;
+                drawRoundRect(obs.x, obs.y, obs.w, obs.h, 3, rgb(obs.color));
+
+                if (hitbox.x < obs.x + obs.w && hitbox.x + hitbox.w > obs.x && hitbox.y < obs.y + obs.h && hitbox.y + hitbox.h > obs.y) {
+                    if (!dev_mode) {
+                        playSound("buzz");
+                        saveScore(score); // Save Score to Leaderboard on Death
+                        saveShopData();   // Save Coins collected
+                        state = "GAME_OVER";
+                    }
+                }
+                if (obs.x < -50) {
+                    obstacles.splice(i, 1);
+                    score += Math.max(5, Math.floor(game_speed * 1.5));
+                    if (!dev_mode) game_speed += 0.05;
+                }
+            }
+
+            for (let i = collectible_coins.length - 1; i >= 0; i--) {
+                let c = collectible_coins[i]; c.x -= game_speed;
+                ctx.fillStyle = rgb(GOLD); ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = rgb(WHITE); ctx.beginPath(); ctx.arc(c.x, c.y, c.r - 4, 0, Math.PI*2); ctx.fill();
+
+                let pickup_radius = magnet_unlocked ? c.r * 4.0 : c.r;
+                let distSq = Math.pow((player_x + player_w/2) - c.x, 2) + Math.pow((player_y + player_h/2) - c.y, 2);
+                if (distSq < Math.pow((Math.max(player_w, player_h)/2 + pickup_radius), 2)) {
+                    coins += 5; playSound("ting"); collectible_coins.splice(i, 1);
+                } else if (c.x < -50) { collectible_coins.splice(i, 1); }
+            }
+
+            let render_color = dev_mode ? rgb(DEV_COLOR) : rgb(equipped_color);
+            for (let t of trail) {
+                t.a -= 25;
+                if (t.a > 0) { ctx.globalAlpha = t.a / 510; draw_player_shape(equipped_shape, render_color, t.x, t.y, t.w, t.h); ctx.globalAlpha = 1.0; }
+            }
+            draw_player_shape(equipped_shape, render_color, player_x, player_y, player_w, player_h);
+
+            drawText(`SCORE: ${Math.floor(score)}`, 20, 30, 16, rgb(WHITE));
+            drawText(`COINS: ${coins}`, 780, 30, 16, rgb(GOLD), "right");
+
+            if (dev_mode) {
+                drawText("DEV: GOD MODE ACTIVE", WIDTH/2, 70, 16, rgb(DEV_COLOR), "center");
+                drawText(`SPD: ${game_speed.toFixed(1)}`, WIDTH/2, 95, 16, rgb(WHITE), "center");
+                drawRoundRect(btn_dev_speed_down.x, btn_dev_speed_down.y, btn_dev_speed_down.w, btn_dev_speed_down.h, 8, rgb([150, 50, 50])); drawText("SPD-", btn_dev_speed_down.x + btn_dev_speed_down.w/2, btn_dev_speed_down.y + btn_dev_speed_down.h/2, 14, rgb(WHITE), "center");
+                drawRoundRect(btn_dev_speed_up.x, btn_dev_speed_up.y, btn_dev_speed_up.w, btn_dev_speed_up.h, 8, rgb([50, 150, 50])); drawText("SPD+", btn_dev_speed_up.x + btn_dev_speed_up.w/2, btn_dev_speed_up.y + btn_dev_speed_up.h/2, 14, rgb(WHITE), "center");
+                drawRoundRect(btn_dev_coin_up.x, btn_dev_coin_up.y, btn_dev_coin_up.w, btn_dev_coin_up.h, 8, rgb(GOLD)); drawText("COIN+", btn_dev_coin_up.x + btn_dev_coin_up.w/2, btn_dev_coin_up.y + btn_dev_coin_up.h/2, 14, rgb(MENU_BG), "center");
+                drawRoundRect(btn_dev_exit.x, btn_dev_exit.y, btn_dev_exit.w, btn_dev_exit.h, 8, rgb([80, 80, 90])); drawText("EXIT DEV", btn_dev_exit.x + btn_dev_exit.w/2, btn_dev_exit.y + btn_dev_exit.h/2, 14, rgb(WHITE), "center");
+            }
+        } else if (state === "GAME_OVER") {
+            ctx.fillStyle = rgb(MENU_BG); ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            drawText("WASTED", WIDTH/2, 150, 40, rgb(DANGER_COLOR), "center");
+            drawText(`FINAL SCORE: ${Math.floor(score)}`, WIDTH/2, 220, 20, rgb(WHITE), "center");
+            drawText("Tap anywhere to return to Menu", WIDTH/2, 300, 16, rgb(equipped_color), "center");
+            
+            // Show Leaderboard on Game Over screen too
+            drawText("TOP SCORES", WIDTH/2, 350, 16, rgb(GOLD), "center");
+            for (let i = 0; i < Math.min(3, leaderboard.length); i++) {
+                drawText(`${i+1}. ${leaderboard[i].name} - ${leaderboard[i].score}`, WIDTH/2, 380 + (i*20), 14, rgb(WHITE), "center");
+            }
+        }
+
+        requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+</script>
+</body>
+</html>
