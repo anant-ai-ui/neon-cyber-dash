@@ -84,11 +84,13 @@
     const PUBLIC_CODE = "6a733b878f40bb1018a34287"; 
     const PRIVATE_CODE = "c3lTodpVukep7Qe-l91GaQBGwK9QeMmEy_8_IcTaFJXQ";
 
-    // Global server se scores lane ka function
+    // Global server se scores lane ka function (Proxy ke sath)
     async function fetchGlobalLeaderboard() {
         if (PUBLIC_CODE === "") return; 
         try {
-            let res = await fetch(`https://www.dreamlo.com/lb/${PUBLIC_CODE}/json`);
+            // AllOrigins Proxy use karke HTTP/HTTPS security block bypass kar rahe hain
+            let dreamloUrl = `http://dreamlo.com/lb/${PUBLIC_CODE}/json`;
+            let res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(dreamloUrl)}`);
             let data = await res.json();
             let entries = data.dreamlo?.leaderboard?.entry;
             
@@ -135,7 +137,7 @@
         if(audioCtx.state === 'suspended') audioCtx.resume();
     });
 
-    // Score save karne ka naya function
+    // Score save karne ka naya function (Proxy ke sath)
     async function saveScore(score) {
         let finalScore = Math.floor(score);
         
@@ -149,7 +151,9 @@
         if (PRIVATE_CODE !== "") {
             try {
                 let safeName = encodeURIComponent(currentPlayerName);
-                await fetch(`https://www.dreamlo.com/lb/${PRIVATE_CODE}/add/${safeName}/${finalScore}`);
+                let dreamloUrl = `http://dreamlo.com/lb/${PRIVATE_CODE}/add/${safeName}/${finalScore}`;
+                // Proxy API se data bhejenge
+                await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(dreamloUrl)}`);
                 // Save hone ke baad list update karein
                 await fetchGlobalLeaderboard(); 
             } catch(e) {
@@ -663,5 +667,4 @@
 </script>
 </body>
 </html>
-
 
