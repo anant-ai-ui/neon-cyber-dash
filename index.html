@@ -80,6 +80,36 @@
     let currentPlayerName = "GUEST";
     let leaderboard = JSON.parse(localStorage.getItem("cyberDashLeaderboard")) || [];
 
+    // Dreamlo API Codes
+    const PUBLIC_CODE = "6a733b878f40bb1018a34287"; 
+    const PRIVATE_CODE = "c3lTodpVukep7Qe-l91GaQBGwK9QeMmEy_8_IcTaFJXQ";
+
+    // Global server se scores lane ka function
+    async function fetchGlobalLeaderboard() {
+        if (PUBLIC_CODE === "") return; 
+        try {
+            let res = await fetch(`https://www.dreamlo.com/lb/${PUBLIC_CODE}/json`);
+            let data = await res.json();
+            let entries = data.dreamlo?.leaderboard?.entry;
+            
+            let globalBoard = [];
+            if (entries) {
+                // Agar sirf 1 entry hoti hai to Dreamlo object deta hai, nahi to array
+                if (!Array.isArray(entries)) entries = [entries]; 
+                globalBoard = entries.map(e => ({ name: e.name, score: parseInt(e.score) }));
+            }
+            
+            // Top 5 scores filter karke locally bhi save kar lenge
+            leaderboard = globalBoard.slice(0, 5); 
+            localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
+        } catch(e) {
+            console.error("Global leaderboard fetch failed.", e);
+        }
+    }
+
+    // Game load hote hi global scores fetch karein
+    fetchGlobalLeaderboard();
+
     const namePrompt = document.getElementById("namePrompt");
     const nameInput = document.getElementById("playerNameInput");
     const startBtn = document.getElementById("startBtn");
@@ -94,7 +124,8 @@
     startBtn.addEventListener("click", () => {
         let name = nameInput.value.trim();
         if(name === "") name = "GUEST";
-        currentPlayerName = name.toUpperCase();
+        // Naam se spaces hata dete hain taaki API me error na aaye
+        currentPlayerName = name.toUpperCase().replace(/\s+/g, '_');
         localStorage.setItem("lastPlayerName", currentPlayerName);
         
         namePrompt.style.display = "none";
@@ -104,15 +135,27 @@
         if(audioCtx.state === 'suspended') audioCtx.resume();
     });
 
-    function saveScore(score) {
+    // Score save karne ka naya function
+    async function saveScore(score) {
         let finalScore = Math.floor(score);
+        
+        // 1. Instant UI update ke liye locally save karein
         leaderboard.push({ name: currentPlayerName, score: finalScore });
-        // Sort highest to lowest
         leaderboard.sort((a, b) => b.score - a.score);
-        // Keep only top 5
         leaderboard = leaderboard.slice(0, 5);
-        // Save to local storage
         localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
+
+        // 2. Global Database me background me save karein
+        if (PRIVATE_CODE !== "") {
+            try {
+                let safeName = encodeURIComponent(currentPlayerName);
+                await fetch(`https://www.dreamlo.com/lb/${PRIVATE_CODE}/add/${safeName}/${finalScore}`);
+                // Save hone ke baad list update karein
+                await fetchGlobalLeaderboard(); 
+            } catch(e) {
+                console.error("Could not save score globally.", e);
+            }
+        }
     }
 
     // --- Audio System (Web Audio API) ---
@@ -177,7 +220,7 @@
 
     // Game States & Variables
     let state = "MENU";
-    let coins = parseInt(localStorage.getItem("cyberDashCoins")) || 0; // Saved Coins
+    let coins = parseInt(localStorage.getItem("cyberDashCoins")) || 0; 
     let score = 0;
     let time_ticks = 0;
 
@@ -466,7 +509,7 @@
             // Draw Local Leaderboard on Menu Screen
             drawText("TOP 5 LEADERBOARD", 650, 30, 16, rgb(GOLD), "center");
             if (leaderboard.length === 0) {
-                drawText("No Scores Yet!", 650, 60, 14, rgb(WHITE), "center");
+                drawText("Fetching...", 650, 60, 14, rgb(WHITE), "center");
             } else {
                 for (let i = 0; i < leaderboard.length; i++) {
                     let yPos = 60 + (i * 25);
@@ -620,3 +663,4 @@
 </script>
 </body>
 </html>
+
