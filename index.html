@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -24,9 +25,8 @@
             object-fit: contain;
             box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
             aspect-ratio: 16/9;
-            display: none; /* Hidden until name is entered */
+            display: none;
         }
-        /* Name Prompt UI */
         #namePrompt {
             position: absolute;
             background: rgba(20, 20, 25, 0.95);
@@ -65,7 +65,6 @@
 </head>
 <body>
 
-<!-- Name Input UI -->
 <div id="namePrompt">
     <h2>ENTER YOUR NAME</h2>
     <input type="text" id="playerNameInput" placeholder="Player 1" maxlength="10" autocomplete="off">
@@ -84,32 +83,39 @@
     const PUBLIC_CODE = "6a733b878f40bb1018a34287"; 
     const PRIVATE_CODE = "c3lTodpVukep7Qe-l91GaQBGwK9QeMmEy_8_IcTaFJXQ";
 
-    // Global server se scores lane ka function (Proxy ke sath)
+    // Global server se scores lane ka function
     async function fetchGlobalLeaderboard() {
         if (PUBLIC_CODE === "") return; 
         try {
-            // AllOrigins Proxy use karke HTTP/HTTPS security block bypass kar rahe hain
-            let dreamloUrl = `http://dreamlo.com/lb/${PUBLIC_CODE}/json`;
-            let res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(dreamloUrl)}`);
-            let data = await res.json();
-            let entries = data.dreamlo?.leaderboard?.entry;
+            // Cache Buster: URL ke end me time add kiya taaki Proxy hamesha naya data laye
+            let cb = Date.now(); 
+            let targetUrl = `http://dreamlo.com/lb/${PUBLIC_CODE}/json?_=${cb}`;
+            let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
             
-            let globalBoard = [];
-            if (entries) {
-                // Agar sirf 1 entry hoti hai to Dreamlo object deta hai, nahi to array
-                if (!Array.isArray(entries)) entries = [entries]; 
-                globalBoard = entries.map(e => ({ name: e.name, score: parseInt(e.score) }));
+            let res = await fetch(proxyUrl);
+            let proxyData = await res.json();
+            
+            // AllOrigins se string format me data aata hai, usko wapas JSON banaya
+            if (proxyData.contents) {
+                let data = JSON.parse(proxyData.contents);
+                let entries = data.dreamlo?.leaderboard?.entry;
+                
+                let globalBoard = [];
+                if (entries) {
+                    if (!Array.isArray(entries)) entries = [entries]; 
+                    globalBoard = entries.map(e => ({ name: e.name, score: parseInt(e.score) }));
+                }
+                
+                if (globalBoard.length > 0) {
+                    leaderboard = globalBoard.slice(0, 5); 
+                    localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
+                }
             }
-            
-            // Top 5 scores filter karke locally bhi save kar lenge
-            leaderboard = globalBoard.slice(0, 5); 
-            localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
         } catch(e) {
             console.error("Global leaderboard fetch failed.", e);
         }
     }
 
-    // Game load hote hi global scores fetch karein
     fetchGlobalLeaderboard();
 
     const namePrompt = document.getElementById("namePrompt");
@@ -118,7 +124,6 @@
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
 
-    // Check if name already exists in local storage
     if(localStorage.getItem("lastPlayerName")) {
         nameInput.value = localStorage.getItem("lastPlayerName");
     }
@@ -126,36 +131,36 @@
     startBtn.addEventListener("click", () => {
         let name = nameInput.value.trim();
         if(name === "") name = "GUEST";
-        // Naam se spaces hata dete hain taaki API me error na aaye
         currentPlayerName = name.toUpperCase().replace(/\s+/g, '_');
         localStorage.setItem("lastPlayerName", currentPlayerName);
         
         namePrompt.style.display = "none";
         canvas.style.display = "block";
         
-        // Initialize Audio context only after user interaction
         if(audioCtx.state === 'suspended') audioCtx.resume();
     });
 
-    // Score save karne ka naya function (Proxy ke sath)
     async function saveScore(score) {
         let finalScore = Math.floor(score);
         
-        // 1. Instant UI update ke liye locally save karein
+        // 1. Instant UI update
         leaderboard.push({ name: currentPlayerName, score: finalScore });
         leaderboard.sort((a, b) => b.score - a.score);
         leaderboard = leaderboard.slice(0, 5);
         localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
 
-        // 2. Global Database me background me save karein
+        // 2. Global server par save karna (Cache buster ke sath)
         if (PRIVATE_CODE !== "") {
             try {
                 let safeName = encodeURIComponent(currentPlayerName);
-                let dreamloUrl = `http://dreamlo.com/lb/${PRIVATE_CODE}/add/${safeName}/${finalScore}`;
-                // Proxy API se data bhejenge
-                await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(dreamloUrl)}`);
-                // Save hone ke baad list update karein
-                await fetchGlobalLeaderboard(); 
+                let cb = Date.now();
+                let targetUrl = `http://dreamlo.com/lb/${PRIVATE_CODE}/add/${safeName}/${finalScore}?_=${cb}`;
+                let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+                
+                await fetch(proxyUrl);
+                
+                // 1.5 second ka delay taaki server update ho sake, fir naya leaderboard laaye
+                setTimeout(fetchGlobalLeaderboard, 1500); 
             } catch(e) {
                 console.error("Could not save score globally.", e);
             }
@@ -167,7 +172,7 @@
     const audioCtx = new AudioContext();
 
     function playSound(type) {
-        if (audioCtx.state === 'suspended') return; // prevent error before interaction
+        if (audioCtx.state === 'suspended') return; 
         
         const osc = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
@@ -205,7 +210,6 @@
     const HEIGHT = 450;
     const FLOOR_Y = 380;
 
-    // --- Colors & Themes ---
     const WHITE = [255, 255, 255];
     const GOLD = [255, 215, 0];
     const MENU_BG = [20, 20, 25];
@@ -222,13 +226,11 @@
         {bg: [10, 15, 40], moon: [0, 255, 255], b_front: [15, 20, 50], b_back: [20, 30, 60]}
     ];
 
-    // Game States & Variables
     let state = "MENU";
     let coins = parseInt(localStorage.getItem("cyberDashCoins")) || 0; 
     let score = 0;
     let time_ticks = 0;
 
-    // Particles (Parallax)
     let bg_particles = [];
     for(let i=0; i<50; i++) {
         bg_particles.push({ x: Math.random() * WIDTH, y: Math.random() * HEIGHT, s: 1.5 + Math.random() * 2.5 });
@@ -242,7 +244,6 @@
     const btn_dev_coin_up = {x: WIDTH/2 - 30, y: 15, w: 80, h: 40};
     const btn_dev_exit = {x: WIDTH/2 + 60, y: 15, w: 110, h: 40};
 
-    // --- Shop System ---
     let unlocked_shapes = JSON.parse(localStorage.getItem("cyberDashShapes")) || ["CUBE"];
     let equipped_shape = localStorage.getItem("cyberDashEqShape") || "CUBE";
     let unlocked_colors = JSON.parse(localStorage.getItem("cyberDashColors")) || ["[0, 255, 255]"];
@@ -282,7 +283,6 @@
     const btn_shop = {x: 300, y: 280, w: 200, h: 60};
     const btn_back = {x: 20, y: 20, w: 100, h: 40};
 
-    // --- Game Variables ---
     let game_speed = 9.0;
     const normal_w = 30, normal_h = 60;
     const duck_w = 50, duck_h = 30;
@@ -397,7 +397,7 @@
     }
 
     function handleInputStart(e) {
-        if(namePrompt.style.display !== "none") return; // Block input if name prompt is open
+        if(namePrompt.style.display !== "none") return;
         e.preventDefault();
         const mouse = getPos(e);
 
@@ -510,7 +510,6 @@
             drawText("SHOP", btn_shop.x + btn_shop.w/2, btn_shop.y + btn_shop.h/2, 24, rgb(WHITE), "center");
             drawText(`COINS: ${coins}`, 20, 30, 16, rgb(GOLD));
 
-            // Draw Local Leaderboard on Menu Screen
             drawText("TOP 5 LEADERBOARD", 650, 30, 16, rgb(GOLD), "center");
             if (leaderboard.length === 0) {
                 drawText("Fetching...", 650, 60, 14, rgb(WHITE), "center");
@@ -606,8 +605,8 @@
                 if (hitbox.x < obs.x + obs.w && hitbox.x + hitbox.w > obs.x && hitbox.y < obs.y + obs.h && hitbox.y + hitbox.h > obs.y) {
                     if (!dev_mode) {
                         playSound("buzz");
-                        saveScore(score); // Save Score to Leaderboard on Death
-                        saveShopData();   // Save Coins collected
+                        saveScore(score); 
+                        saveShopData();   
                         state = "GAME_OVER";
                     }
                 }
@@ -654,7 +653,6 @@
             drawText(`FINAL SCORE: ${Math.floor(score)}`, WIDTH/2, 220, 20, rgb(WHITE), "center");
             drawText("Tap anywhere to return to Menu", WIDTH/2, 300, 16, rgb(equipped_color), "center");
             
-            // Show Leaderboard on Game Over screen too
             drawText("TOP SCORES", WIDTH/2, 350, 16, rgb(GOLD), "center");
             for (let i = 0; i < Math.min(3, leaderboard.length); i++) {
                 drawText(`${i+1}. ${leaderboard[i].name} - ${leaderboard[i].score}`, WIDTH/2, 380 + (i*20), 14, rgb(WHITE), "center");
@@ -667,4 +665,3 @@
 </script>
 </body>
 </html>
-
