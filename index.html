@@ -78,7 +78,6 @@
     let currentPlayerName = "GUEST";
     let leaderboard = JSON.parse(localStorage.getItem("cyberDashLeaderboard")) || [];
 
-    // Dreamlo API Codes
     const PUBLIC_CODE = "6a733b878f40bb1018a34287"; 
     const PRIVATE_CODE = "c3lTodpVukep7Qe-l91GaQBGwK9QeMmEy_8_IcTaFJXQ";
 
@@ -86,29 +85,23 @@
     async function fetchGlobalLeaderboard() {
         if (PUBLIC_CODE === "") return; 
         try {
-            // Cache Buster: URL ke end me time add kiya taaki Proxy hamesha naya data laye
-            let cb = Date.now(); 
+            let cb = Math.floor(Math.random() * 1000000); 
             let targetUrl = `http://dreamlo.com/lb/${PUBLIC_CODE}/json?_=${cb}`;
-            let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+            let proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`;
             
             let res = await fetch(proxyUrl);
-            let proxyData = await res.json();
+            let data = await res.json();
             
-            // AllOrigins se string format me data aata hai, usko wapas JSON banaya
-            if (proxyData.contents) {
-                let data = JSON.parse(proxyData.contents);
-                let entries = data.dreamlo?.leaderboard?.entry;
-                
-                let globalBoard = [];
-                if (entries) {
-                    if (!Array.isArray(entries)) entries = [entries]; 
-                    globalBoard = entries.map(e => ({ name: e.name, score: parseInt(e.score) }));
-                }
-                
-                if (globalBoard.length > 0) {
-                    leaderboard = globalBoard.slice(0, 5); 
-                    localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
-                }
+            let entries = data.dreamlo?.leaderboard?.entry;
+            let globalBoard = [];
+            if (entries) {
+                if (!Array.isArray(entries)) entries = [entries]; 
+                globalBoard = entries.map(e => ({ name: e.name, score: parseInt(e.score) }));
+            }
+            
+            if (globalBoard.length > 0) {
+                leaderboard = globalBoard.slice(0, 5); 
+                localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
             }
         } catch(e) {
             console.error("Global leaderboard fetch failed.", e);
@@ -142,26 +135,29 @@
     async function saveScore(score) {
         let finalScore = Math.floor(score);
         
-        // 1. Instant UI update
         leaderboard.push({ name: currentPlayerName, score: finalScore });
         leaderboard.sort((a, b) => b.score - a.score);
         leaderboard = leaderboard.slice(0, 5);
         localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
 
-        // 2. Global server par save karna (Cache buster ke sath)
         if (PRIVATE_CODE !== "") {
             try {
                 let safeName = encodeURIComponent(currentPlayerName);
-                let cb = Date.now();
+                let cb = Math.floor(Math.random() * 1000000);
                 let targetUrl = `http://dreamlo.com/lb/${PRIVATE_CODE}/add/${safeName}/${finalScore}?_=${cb}`;
-                let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+                let proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`;
                 
-                await fetch(proxyUrl);
+                let response = await fetch(proxyUrl);
                 
-                // 1.5 second ka delay taaki server update ho sake, fir naya leaderboard laaye
-                setTimeout(fetchGlobalLeaderboard, 1500); 
+                if(response.ok) {
+                    alert("Score Saved to Global Leaderboard!");
+                } else {
+                    alert("Server ne block kar diya. Status: " + response.status);
+                }
+                
+                setTimeout(fetchGlobalLeaderboard, 1000); 
             } catch(e) {
-                console.error("Could not save score globally.", e);
+                alert("Database Error: " + e.message);
             }
         }
     }
