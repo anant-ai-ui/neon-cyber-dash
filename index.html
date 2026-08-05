@@ -81,30 +81,34 @@
     const PUBLIC_CODE = "6a733b878f40bb1018a34287"; 
     const PRIVATE_CODE = "c3lTodpVukep7Qe-l91GaQBGwK9QeMmEy_8_IcTaFJXQ";
 
-    // Global server se scores lane ka function
+    // Global fetch using AllOrigins Proxy
     async function fetchGlobalLeaderboard() {
         if (PUBLIC_CODE === "") return; 
         try {
-            let cb = Math.floor(Math.random() * 1000000); 
+            let cb = Date.now(); 
             let targetUrl = `http://dreamlo.com/lb/${PUBLIC_CODE}/json?_=${cb}`;
-            let proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`;
+            let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
             
             let res = await fetch(proxyUrl);
-            let data = await res.json();
+            let proxyData = await res.json();
             
-            let entries = data.dreamlo?.leaderboard?.entry;
-            let globalBoard = [];
-            if (entries) {
-                if (!Array.isArray(entries)) entries = [entries]; 
-                globalBoard = entries.map(e => ({ name: e.name, score: parseInt(e.score) }));
-            }
-            
-            if (globalBoard.length > 0) {
-                leaderboard = globalBoard.slice(0, 5); 
-                localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
+            if (proxyData.contents) {
+                let data = JSON.parse(proxyData.contents);
+                let entries = data.dreamlo?.leaderboard?.entry;
+                
+                let globalBoard = [];
+                if (entries) {
+                    if (!Array.isArray(entries)) entries = [entries]; 
+                    globalBoard = entries.map(e => ({ name: e.name, score: parseInt(e.score) }));
+                }
+                
+                if (globalBoard.length > 0) {
+                    leaderboard = globalBoard.slice(0, 5); 
+                    localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
+                }
             }
         } catch(e) {
-            console.error("Global leaderboard fetch failed.", e);
+            console.error("Fetch failed:", e);
         }
     }
 
@@ -132,6 +136,7 @@
         if(audioCtx.state === 'suspended') audioCtx.resume();
     });
 
+    // Score save using AllOrigins Proxy
     async function saveScore(score) {
         let finalScore = Math.floor(score);
         
@@ -143,21 +148,20 @@
         if (PRIVATE_CODE !== "") {
             try {
                 let safeName = encodeURIComponent(currentPlayerName);
-                let cb = Math.floor(Math.random() * 1000000);
+                let cb = Date.now();
                 let targetUrl = `http://dreamlo.com/lb/${PRIVATE_CODE}/add/${safeName}/${finalScore}?_=${cb}`;
-                let proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`;
+                let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
                 
                 let response = await fetch(proxyUrl);
                 
                 if(response.ok) {
-                    alert("Score Saved to Global Leaderboard!");
+                    alert("Data Saved Successfully to Server!");
+                    setTimeout(fetchGlobalLeaderboard, 1000); 
                 } else {
-                    alert("Server ne block kar diya. Status: " + response.status);
+                    alert("Proxy Server ne response deny kar diya.");
                 }
-                
-                setTimeout(fetchGlobalLeaderboard, 1000); 
             } catch(e) {
-                alert("Database Error: " + e.message);
+                alert("Network Blocked! Apne mobile ka Wi-Fi on karke try karo. Error: " + e.message);
             }
         }
     }
