@@ -77,42 +77,7 @@
     // --- Leaderboard & Name Logic ---
     let currentPlayerName = "GUEST";
     let leaderboard = JSON.parse(localStorage.getItem("cyberDashLeaderboard")) || [];
-
-    const PUBLIC_CODE = "6a733b878f40bb1018a34287"; 
-    const PRIVATE_CODE = "c3lTodpVukep7Qe-l91GaQBGwK9QeMmEy_8_IcTaFJXQ";
-
-    // Global fetch using AllOrigins Proxy
-    async function fetchGlobalLeaderboard() {
-        if (PUBLIC_CODE === "") return; 
-        try {
-            let cb = Date.now(); 
-            let targetUrl = `http://dreamlo.com/lb/${PUBLIC_CODE}/json?_=${cb}`;
-            let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-            
-            let res = await fetch(proxyUrl);
-            let proxyData = await res.json();
-            
-            if (proxyData.contents) {
-                let data = JSON.parse(proxyData.contents);
-                let entries = data.dreamlo?.leaderboard?.entry;
-                
-                let globalBoard = [];
-                if (entries) {
-                    if (!Array.isArray(entries)) entries = [entries]; 
-                    globalBoard = entries.map(e => ({ name: e.name, score: parseInt(e.score) }));
-                }
-                
-                if (globalBoard.length > 0) {
-                    leaderboard = globalBoard.slice(0, 5); 
-                    localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
-                }
-            }
-        } catch(e) {
-            console.error("Fetch failed:", e);
-        }
-    }
-
-    fetchGlobalLeaderboard();
+    let is_ai_playing = false; // Naya variable AI mode track karne ke liye
 
     const namePrompt = document.getElementById("namePrompt");
     const nameInput = document.getElementById("playerNameInput");
@@ -136,34 +101,14 @@
         if(audioCtx.state === 'suspended') audioCtx.resume();
     });
 
-    // Score save using AllOrigins Proxy
-    async function saveScore(score) {
-        let finalScore = Math.floor(score);
+    function saveScore(score) {
+        if(is_ai_playing) return; // AI ke score ko leaderboard me save nahi karenge
         
+        let finalScore = Math.floor(score);
         leaderboard.push({ name: currentPlayerName, score: finalScore });
         leaderboard.sort((a, b) => b.score - a.score);
         leaderboard = leaderboard.slice(0, 5);
         localStorage.setItem("cyberDashLeaderboard", JSON.stringify(leaderboard));
-
-        if (PRIVATE_CODE !== "") {
-            try {
-                let safeName = encodeURIComponent(currentPlayerName);
-                let cb = Date.now();
-                let targetUrl = `http://dreamlo.com/lb/${PRIVATE_CODE}/add/${safeName}/${finalScore}?_=${cb}`;
-                let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-                
-                let response = await fetch(proxyUrl);
-                
-                if(response.ok) {
-                    alert("Data Saved Successfully to Server!");
-                    setTimeout(fetchGlobalLeaderboard, 1000); 
-                } else {
-                    alert("Proxy Server ne response deny kar diya.");
-                }
-            } catch(e) {
-                alert("Network Blocked! Apne mobile ka Wi-Fi on karke try karo. Error: " + e.message);
-            }
-        }
     }
 
     // --- Audio System (Web Audio API) ---
@@ -238,10 +183,6 @@
     let dev_mode = false;
     let dev_sequence = [];
     let dev_sequence_timer = 0;
-    const btn_dev_speed_down = {x: WIDTH/2 - 200, y: 15, w: 75, h: 40};
-    const btn_dev_speed_up = {x: WIDTH/2 - 115, y: 15, w: 75, h: 40};
-    const btn_dev_coin_up = {x: WIDTH/2 - 30, y: 15, w: 80, h: 40};
-    const btn_dev_exit = {x: WIDTH/2 + 60, y: 15, w: 110, h: 40};
 
     let unlocked_shapes = JSON.parse(localStorage.getItem("cyberDashShapes")) || ["CUBE"];
     let equipped_shape = localStorage.getItem("cyberDashEqShape") || "CUBE";
@@ -278,8 +219,11 @@
 
     const btn_magnet = {x: 100, y: 360, w: 250, h: 45};
     const MAGNET_COST = 1000;
-    const btn_play = {x: 300, y: 200, w: 200, h: 60};
-    const btn_shop = {x: 300, y: 280, w: 200, h: 60};
+    
+    // Naye Menu Buttons
+    const btn_play = {x: 250, y: 170, w: 300, h: 50};
+    const btn_ai = {x: 250, y: 240, w: 300, h: 50};
+    const btn_shop = {x: 250, y: 310, w: 300, h: 50};
     const btn_back = {x: 20, y: 20, w: 100, h: 40};
 
     let game_speed = 9.0;
@@ -330,8 +274,8 @@
     }
 
     function spawn_obstacle() {
-        if (randInt(0, 1) === 0) obstacles.push({x: WIDTH, y: FLOOR_Y - 40, w: 30, h: 40, color: DANGER_COLOR});
-        else obstacles.push({x: WIDTH, y: FLOOR_Y - 70, w: 40, h: 35, color: AIR_OBSTACLE});
+        if (randInt(0, 1) === 0) obstacles.push({x: WIDTH, y: FLOOR_Y - 40, w: 30, h: 40, color: DANGER_COLOR, type: "ground"});
+        else obstacles.push({x: WIDTH, y: FLOOR_Y - 70, w: 40, h: 35, color: AIR_OBSTACLE, type: "air"});
     }
 
     function spawn_coin() {
@@ -395,6 +339,15 @@
         };
     }
 
+    function setupGame() {
+        state = "PLAYING";
+        obstacles = []; collectible_coins = []; trail = [];
+        spawn_obstacle();
+        score = 0; game_speed = 9.0;
+        player_y = FLOOR_Y - normal_h; vel_y = 0; is_ducking = false;
+        dev_mode = false; dev_sequence = []; dev_sequence_timer = 0;
+    }
+
     function handleInputStart(e) {
         if(namePrompt.style.display !== "none") return;
         e.preventDefault();
@@ -402,13 +355,14 @@
 
         if (state === "MENU") {
             if (isInside(mouse, btn_play)) {
-                state = "PLAYING";
-                obstacles = []; collectible_coins = []; trail = [];
-                spawn_obstacle();
-                score = 0; game_speed = 9.0;
-                player_y = FLOOR_Y - normal_h; vel_y = 0; is_ducking = false;
-                dev_mode = false; dev_sequence = []; dev_sequence_timer = 0;
-            } else if (isInside(mouse, btn_shop)) state = "SHOP";
+                is_ai_playing = false;
+                setupGame();
+            } else if (isInside(mouse, btn_ai)) {
+                is_ai_playing = true;
+                setupGame();
+            } else if (isInside(mouse, btn_shop)) {
+                state = "SHOP";
+            }
         } else if (state === "SHOP") {
             if (isInside(mouse, btn_back)) { state = "MENU"; saveShopData(); }
             for (let s_name in shop_shapes) {
@@ -432,19 +386,16 @@
             }
         } else if (state === "GAME_OVER") {
             state = "MENU";
-        } else if (state === "PLAYING") {
-            if (dev_mode && isInside(mouse, btn_dev_speed_down)) game_speed = Math.max(3.0, game_speed - 1.0);
-            else if (dev_mode && isInside(mouse, btn_dev_speed_up)) game_speed += 1.0;
-            else if (dev_mode && isInside(mouse, btn_dev_coin_up)) { coins += 100; playSound("ting"); }
-            else if (dev_mode && isInside(mouse, btn_dev_exit)) { dev_mode = false; dev_sequence = []; dev_sequence_timer = 0; }
-            else { swipe_start_y = mouse.y; is_swiping = true; }
+        } else if (state === "PLAYING" && !is_ai_playing) {
+            // Player Inputs (Blocked in AI Mode)
+            swipe_start_y = mouse.y; is_swiping = true; 
         }
     }
 
     function handleInputEnd(e) {
         if(namePrompt.style.display !== "none") return;
         e.preventDefault();
-        if (state === "PLAYING" && is_swiping) {
+        if (state === "PLAYING" && !is_ai_playing && is_swiping) {
             const mouse = getPos(e);
             let drag = mouse.y - swipe_start_y;
             if (drag < -SWIPE_THRESHOLD && player_y > 20) {
@@ -466,6 +417,44 @@
     canvas.addEventListener("mouseup", handleInputEnd);
     canvas.addEventListener("touchstart", handleInputStart, {passive: false});
     canvas.addEventListener("touchend", handleInputEnd, {passive: false});
+
+    // --- AI BOT LOGIC ---
+    function runAI() {
+        if (!is_ai_playing || state !== "PLAYING") return;
+        
+        let closestObs = null;
+        let minDist = Infinity;
+        
+        // Find nearest obstacle ahead of AI player
+        for (let obs of obstacles) {
+            if (obs.x + obs.w > player_x) {
+                let dist = obs.x - (player_x + player_w);
+                if (dist > 0 && dist < minDist) {
+                    minDist = dist;
+                    closestObs = obs;
+                }
+            }
+        }
+
+        if (closestObs) {
+            // Math magic: Game speed ke hisab se AI apni reaction distance adjust karega
+            let reactionDist = game_speed * 12; 
+
+            if (minDist < reactionDist) {
+                if (closestObs.type === "ground" && player_y >= FLOOR_Y - normal_h && !is_ducking) {
+                    // Ground obstacle hai, JUMP karo
+                    vel_y = jump_power;
+                    playSound("thud");
+                } else if (closestObs.type === "air" && !is_ducking) {
+                    // Hawa wala obstacle hai, DUCK karo
+                    vel_y = 40; 
+                    is_ducking = true; 
+                    duck_timer = DUCK_DURATION;
+                    player_w = duck_w; player_h = duck_h;
+                }
+            }
+        }
+    }
 
     // --- MAIN GAME LOOP ---
     function loop(timestamp) {
@@ -499,26 +488,20 @@
             let float_y = Math.sin(time_ticks * 0.003) * 12;
             let title_float_y = Math.cos(time_ticks * 0.002) * 6;
 
-            draw_player_shape(equipped_shape, rgb(equipped_color), 360, FLOOR_Y - 80 + float_y, 80, 80);
-            drawText("NEON DASH", 400, 70 + title_float_y, 40, rgb(WHITE), "center");
-            drawText(`Welcome, ${currentPlayerName}`, 400, 110 + title_float_y, 16, rgb(equipped_color), "center");
+            draw_player_shape(equipped_shape, rgb(equipped_color), 360, FLOOR_Y - 100 + float_y, 80, 80);
+            drawText("NEON DASH", 400, 50 + title_float_y, 40, rgb(WHITE), "center");
+            drawText(`Welcome, ${currentPlayerName}`, 400, 90 + title_float_y, 16, rgb(equipped_color), "center");
 
+            // Modified Menu Buttons
             drawRoundRect(btn_play.x, btn_play.y, btn_play.w, btn_play.h, 10, rgb(equipped_color));
+            drawRoundRect(btn_ai.x, btn_ai.y, btn_ai.w, btn_ai.h, 10, rgb([255, 0, 100]));
             drawRoundRect(btn_shop.x, btn_shop.y, btn_shop.w, btn_shop.h, 10, rgb([80, 80, 90]));
-            drawText("PLAY", btn_play.x + btn_play.w/2, btn_play.y + btn_play.h/2, 24, rgb(MENU_BG), "center");
-            drawText("SHOP", btn_shop.x + btn_shop.w/2, btn_shop.y + btn_shop.h/2, 24, rgb(WHITE), "center");
+            
+            drawText("PLAY YOURSELF", btn_play.x + btn_play.w/2, btn_play.y + btn_play.h/2, 22, rgb(MENU_BG), "center");
+            drawText("WATCH AI PLAY", btn_ai.x + btn_ai.w/2, btn_ai.y + btn_ai.h/2, 22, rgb(WHITE), "center");
+            drawText("SHOP", btn_shop.x + btn_shop.w/2, btn_shop.y + btn_shop.h/2, 22, rgb(WHITE), "center");
+            
             drawText(`COINS: ${coins}`, 20, 30, 16, rgb(GOLD));
-
-            drawText("TOP 5 LEADERBOARD", 650, 30, 16, rgb(GOLD), "center");
-            if (leaderboard.length === 0) {
-                drawText("Fetching...", 650, 60, 14, rgb(WHITE), "center");
-            } else {
-                for (let i = 0; i < leaderboard.length; i++) {
-                    let yPos = 60 + (i * 25);
-                    drawText(`${i+1}. ${leaderboard[i].name}`, 550, yPos, 14, rgb(WHITE), "left");
-                    drawText(`${leaderboard[i].score}`, 750, yPos, 14, rgb(equipped_color), "right");
-                }
-            }
 
         } else if (state === "SHOP") {
             ctx.fillStyle = rgb(MENU_BG); ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -556,6 +539,9 @@
             drawText(m_txt, btn_magnet.x + btn_magnet.w/2, btn_magnet.y + btn_magnet.h/2, 16, rgb(WHITE), "center");
 
         } else if (state === "PLAYING") {
+            // Call AI if active
+            if (is_ai_playing) runAI();
+
             if (is_ducking) {
                 duck_timer--;
                 if (duck_timer <= 0) { is_ducking = false; player_w = normal_w; player_h = normal_h; if (player_y >= FLOOR_Y - normal_h) player_y = FLOOR_Y - normal_h; }
@@ -605,7 +591,7 @@
                     if (!dev_mode) {
                         playSound("buzz");
                         saveScore(score); 
-                        saveShopData();   
+                        if(!is_ai_playing) saveShopData();   
                         state = "GAME_OVER";
                     }
                 }
@@ -624,7 +610,8 @@
                 let pickup_radius = magnet_unlocked ? c.r * 4.0 : c.r;
                 let distSq = Math.pow((player_x + player_w/2) - c.x, 2) + Math.pow((player_y + player_h/2) - c.y, 2);
                 if (distSq < Math.pow((Math.max(player_w, player_h)/2 + pickup_radius), 2)) {
-                    coins += 5; playSound("ting"); collectible_coins.splice(i, 1);
+                    if(!is_ai_playing) { coins += 5; playSound("ting"); }
+                    collectible_coins.splice(i, 1);
                 } else if (c.x < -50) { collectible_coins.splice(i, 1); }
             }
 
@@ -638,24 +625,15 @@
             drawText(`SCORE: ${Math.floor(score)}`, 20, 30, 16, rgb(WHITE));
             drawText(`COINS: ${coins}`, 780, 30, 16, rgb(GOLD), "right");
 
-            if (dev_mode) {
-                drawText("DEV: GOD MODE ACTIVE", WIDTH/2, 70, 16, rgb(DEV_COLOR), "center");
-                drawText(`SPD: ${game_speed.toFixed(1)}`, WIDTH/2, 95, 16, rgb(WHITE), "center");
-                drawRoundRect(btn_dev_speed_down.x, btn_dev_speed_down.y, btn_dev_speed_down.w, btn_dev_speed_down.h, 8, rgb([150, 50, 50])); drawText("SPD-", btn_dev_speed_down.x + btn_dev_speed_down.w/2, btn_dev_speed_down.y + btn_dev_speed_down.h/2, 14, rgb(WHITE), "center");
-                drawRoundRect(btn_dev_speed_up.x, btn_dev_speed_up.y, btn_dev_speed_up.w, btn_dev_speed_up.h, 8, rgb([50, 150, 50])); drawText("SPD+", btn_dev_speed_up.x + btn_dev_speed_up.w/2, btn_dev_speed_up.y + btn_dev_speed_up.h/2, 14, rgb(WHITE), "center");
-                drawRoundRect(btn_dev_coin_up.x, btn_dev_coin_up.y, btn_dev_coin_up.w, btn_dev_coin_up.h, 8, rgb(GOLD)); drawText("COIN+", btn_dev_coin_up.x + btn_dev_coin_up.w/2, btn_dev_coin_up.y + btn_dev_coin_up.h/2, 14, rgb(MENU_BG), "center");
-                drawRoundRect(btn_dev_exit.x, btn_dev_exit.y, btn_dev_exit.w, btn_dev_exit.h, 8, rgb([80, 80, 90])); drawText("EXIT DEV", btn_dev_exit.x + btn_dev_exit.w/2, btn_dev_exit.y + btn_dev_exit.h/2, 14, rgb(WHITE), "center");
+            if (is_ai_playing) {
+                drawText("🤖 AI AUTOPILOT ACTIVE 🤖", WIDTH/2, 60, 20, rgb([255, 0, 100]), "center");
             }
+
         } else if (state === "GAME_OVER") {
             ctx.fillStyle = rgb(MENU_BG); ctx.fillRect(0, 0, WIDTH, HEIGHT);
-            drawText("WASTED", WIDTH/2, 150, 40, rgb(DANGER_COLOR), "center");
+            drawText(is_ai_playing ? "AI FAILED!" : "WASTED", WIDTH/2, 150, 40, rgb(DANGER_COLOR), "center");
             drawText(`FINAL SCORE: ${Math.floor(score)}`, WIDTH/2, 220, 20, rgb(WHITE), "center");
             drawText("Tap anywhere to return to Menu", WIDTH/2, 300, 16, rgb(equipped_color), "center");
-            
-            drawText("TOP SCORES", WIDTH/2, 350, 16, rgb(GOLD), "center");
-            for (let i = 0; i < Math.min(3, leaderboard.length); i++) {
-                drawText(`${i+1}. ${leaderboard[i].name} - ${leaderboard[i].score}`, WIDTH/2, 380 + (i*20), 14, rgb(WHITE), "center");
-            }
         }
 
         requestAnimationFrame(loop);
