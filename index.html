@@ -77,7 +77,7 @@
     // --- Leaderboard & Name Logic ---
     let currentPlayerName = "GUEST";
     let leaderboard = JSON.parse(localStorage.getItem("cyberDashLeaderboard")) || [];
-    let is_ai_playing = false; // Naya variable AI mode track karne ke liye
+    let is_ai_playing = false; 
 
     const namePrompt = document.getElementById("namePrompt");
     const nameInput = document.getElementById("playerNameInput");
@@ -102,7 +102,7 @@
     });
 
     function saveScore(score) {
-        if(is_ai_playing) return; // AI ke score ko leaderboard me save nahi karenge
+        if(is_ai_playing) return; 
         
         let finalScore = Math.floor(score);
         leaderboard.push({ name: currentPlayerName, score: finalScore });
@@ -183,6 +183,15 @@
     let dev_mode = false;
     let dev_sequence = [];
     let dev_sequence_timer = 0;
+    
+    // Developer Buttons
+    const btn_dev_speed_down = {x: WIDTH/2 - 200, y: 15, w: 75, h: 40};
+    const btn_dev_speed_up = {x: WIDTH/2 - 115, y: 15, w: 75, h: 40};
+    const btn_dev_coin_up = {x: WIDTH/2 - 30, y: 15, w: 80, h: 40};
+    const btn_dev_exit = {x: WIDTH/2 + 60, y: 15, w: 110, h: 40};
+    
+    // AI Mode Buttons
+    const btn_ai_exit = {x: WIDTH/2 - 30, y: 15, w: 110, h: 40};
 
     let unlocked_shapes = JSON.parse(localStorage.getItem("cyberDashShapes")) || ["CUBE"];
     let equipped_shape = localStorage.getItem("cyberDashEqShape") || "CUBE";
@@ -386,9 +395,23 @@
             }
         } else if (state === "GAME_OVER") {
             state = "MENU";
-        } else if (state === "PLAYING" && !is_ai_playing) {
-            // Player Inputs (Blocked in AI Mode)
-            swipe_start_y = mouse.y; is_swiping = true; 
+        } else if (state === "PLAYING") {
+            // Yahan Dev Mode aur AI Mode dono ke Buttons Fix Kar Diye!
+            if (is_ai_playing) {
+                if (isInside(mouse, btn_dev_speed_down)) game_speed = Math.max(3.0, game_speed - 1.0);
+                else if (isInside(mouse, btn_dev_speed_up)) game_speed += 1.0;
+                else if (isInside(mouse, btn_ai_exit)) { is_ai_playing = false; state = "MENU"; } 
+            } 
+            else if (dev_mode) {
+                if (isInside(mouse, btn_dev_speed_down)) game_speed = Math.max(3.0, game_speed - 1.0);
+                else if (isInside(mouse, btn_dev_speed_up)) game_speed += 1.0;
+                else if (isInside(mouse, btn_dev_coin_up)) { coins += 100; playSound("ting"); }
+                else if (isInside(mouse, btn_dev_exit)) { dev_mode = false; dev_sequence = []; dev_sequence_timer = 0; }
+                else { swipe_start_y = mouse.y; is_swiping = true; }
+            } 
+            else {
+                swipe_start_y = mouse.y; is_swiping = true; 
+            }
         }
     }
 
@@ -437,16 +460,13 @@
         }
 
         if (closestObs) {
-            // Math magic: Game speed ke hisab se AI apni reaction distance adjust karega
             let reactionDist = game_speed * 12; 
 
             if (minDist < reactionDist) {
                 if (closestObs.type === "ground" && player_y >= FLOOR_Y - normal_h && !is_ducking) {
-                    // Ground obstacle hai, JUMP karo
                     vel_y = jump_power;
                     playSound("thud");
                 } else if (closestObs.type === "air" && !is_ducking) {
-                    // Hawa wala obstacle hai, DUCK karo
                     vel_y = 40; 
                     is_ducking = true; 
                     duck_timer = DUCK_DURATION;
@@ -461,7 +481,7 @@
         time_ticks = timestamp;
         ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
-        if (state === "PLAYING" && !dev_mode) {
+        if (state === "PLAYING" && !dev_mode && !is_ai_playing) {
             if (dev_sequence_timer > 0) {
                 dev_sequence_timer++;
                 if (dev_sequence_timer > 120) { dev_sequence = []; dev_sequence_timer = 0; }
@@ -492,7 +512,6 @@
             drawText("NEON DASH", 400, 50 + title_float_y, 40, rgb(WHITE), "center");
             drawText(`Welcome, ${currentPlayerName}`, 400, 90 + title_float_y, 16, rgb(equipped_color), "center");
 
-            // Modified Menu Buttons
             drawRoundRect(btn_play.x, btn_play.y, btn_play.w, btn_play.h, 10, rgb(equipped_color));
             drawRoundRect(btn_ai.x, btn_ai.y, btn_ai.w, btn_ai.h, 10, rgb([255, 0, 100]));
             drawRoundRect(btn_shop.x, btn_shop.y, btn_shop.w, btn_shop.h, 10, rgb([80, 80, 90]));
@@ -539,7 +558,6 @@
             drawText(m_txt, btn_magnet.x + btn_magnet.w/2, btn_magnet.y + btn_magnet.h/2, 16, rgb(WHITE), "center");
 
         } else if (state === "PLAYING") {
-            // Call AI if active
             if (is_ai_playing) runAI();
 
             if (is_ducking) {
@@ -625,8 +643,23 @@
             drawText(`SCORE: ${Math.floor(score)}`, 20, 30, 16, rgb(WHITE));
             drawText(`COINS: ${coins}`, 780, 30, 16, rgb(GOLD), "right");
 
+            // AI Controls Renderer
             if (is_ai_playing) {
                 drawText("🤖 AI AUTOPILOT ACTIVE 🤖", WIDTH/2, 60, 20, rgb([255, 0, 100]), "center");
+                drawText(`AI SPD: ${game_speed.toFixed(1)}`, WIDTH/2, 85, 16, rgb(WHITE), "center");
+                
+                drawRoundRect(btn_dev_speed_down.x, btn_dev_speed_down.y, btn_dev_speed_down.w, btn_dev_speed_down.h, 8, rgb([150, 50, 50])); drawText("SPD-", btn_dev_speed_down.x + btn_dev_speed_down.w/2, btn_dev_speed_down.y + btn_dev_speed_down.h/2, 14, rgb(WHITE), "center");
+                drawRoundRect(btn_dev_speed_up.x, btn_dev_speed_up.y, btn_dev_speed_up.w, btn_dev_speed_up.h, 8, rgb([50, 150, 50])); drawText("SPD+", btn_dev_speed_up.x + btn_dev_speed_up.w/2, btn_dev_speed_up.y + btn_dev_speed_up.h/2, 14, rgb(WHITE), "center");
+                drawRoundRect(btn_ai_exit.x, btn_ai_exit.y, btn_ai_exit.w, btn_ai_exit.h, 8, rgb([80, 80, 90])); drawText("EXIT AI", btn_ai_exit.x + btn_ai_exit.w/2, btn_ai_exit.y + btn_ai_exit.h/2, 14, rgb(WHITE), "center");
+            } 
+            // Regular Dev Mode Renderer
+            else if (dev_mode) {
+                drawText("DEV: GOD MODE ACTIVE", WIDTH/2, 70, 16, rgb(DEV_COLOR), "center");
+                drawText(`SPD: ${game_speed.toFixed(1)}`, WIDTH/2, 95, 16, rgb(WHITE), "center");
+                drawRoundRect(btn_dev_speed_down.x, btn_dev_speed_down.y, btn_dev_speed_down.w, btn_dev_speed_down.h, 8, rgb([150, 50, 50])); drawText("SPD-", btn_dev_speed_down.x + btn_dev_speed_down.w/2, btn_dev_speed_down.y + btn_dev_speed_down.h/2, 14, rgb(WHITE), "center");
+                drawRoundRect(btn_dev_speed_up.x, btn_dev_speed_up.y, btn_dev_speed_up.w, btn_dev_speed_up.h, 8, rgb([50, 150, 50])); drawText("SPD+", btn_dev_speed_up.x + btn_dev_speed_up.w/2, btn_dev_speed_up.y + btn_dev_speed_up.h/2, 14, rgb(WHITE), "center");
+                drawRoundRect(btn_dev_coin_up.x, btn_dev_coin_up.y, btn_dev_coin_up.w, btn_dev_coin_up.h, 8, rgb(GOLD)); drawText("COIN+", btn_dev_coin_up.x + btn_dev_coin_up.w/2, btn_dev_coin_up.y + btn_dev_coin_up.h/2, 14, rgb(MENU_BG), "center");
+                drawRoundRect(btn_dev_exit.x, btn_dev_exit.y, btn_dev_exit.w, btn_dev_exit.h, 8, rgb([80, 80, 90])); drawText("EXIT DEV", btn_dev_exit.x + btn_dev_exit.w/2, btn_dev_exit.y + btn_dev_exit.h/2, 14, rgb(WHITE), "center");
             }
 
         } else if (state === "GAME_OVER") {
