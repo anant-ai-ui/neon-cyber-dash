@@ -65,7 +65,8 @@
 <body>
 
 <div id="namePrompt">
-    <h2>ENTER YOUR NAME</h2>
+    <!-- Ye Emoji confirm karega ki naya code load hua hai -->
+    <h2>ENTER YOUR NAME ⚡</h2>
     <input type="text" id="playerNameInput" placeholder="Player 1" maxlength="10" autocomplete="off">
     <br>
     <button id="startBtn">ENTER GAME</button>
@@ -229,7 +230,6 @@
     const btn_magnet = {x: 100, y: 360, w: 250, h: 45};
     const MAGNET_COST = 1000;
     
-    // Naye Menu Buttons
     const btn_play = {x: 250, y: 170, w: 300, h: 50};
     const btn_ai = {x: 250, y: 240, w: 300, h: 50};
     const btn_shop = {x: 250, y: 310, w: 300, h: 50};
@@ -421,8 +421,10 @@
             const mouse = getPos(e);
             let drag = mouse.y - swipe_start_y;
             
-            // Fix: Sirf ground par hi jump allow karega
-            if (drag < -SWIPE_THRESHOLD && player_y >= FLOOR_Y - player_h) {
+            // STRICT GROUND CHECK: Box must be exactly at floor level to jump
+            let is_on_ground = (player_y >= FLOOR_Y - player_h - 1);
+
+            if (drag < -SWIPE_THRESHOLD && is_on_ground) {
                 if (is_ducking) player_y -= (normal_h - duck_h);
                 is_ducking = false; player_w = normal_w; player_h = normal_h;
                 vel_y = jump_power; playSound("thud");
