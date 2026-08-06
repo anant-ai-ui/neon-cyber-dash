@@ -396,7 +396,6 @@
         } else if (state === "GAME_OVER") {
             state = "MENU";
         } else if (state === "PLAYING") {
-            // Yahan Dev Mode aur AI Mode dono ke Buttons Fix Kar Diye!
             if (is_ai_playing) {
                 if (isInside(mouse, btn_dev_speed_down)) game_speed = Math.max(3.0, game_speed - 1.0);
                 else if (isInside(mouse, btn_dev_speed_up)) game_speed += 1.0;
@@ -421,12 +420,15 @@
         if (state === "PLAYING" && !is_ai_playing && is_swiping) {
             const mouse = getPos(e);
             let drag = mouse.y - swipe_start_y;
-            if (drag < -SWIPE_THRESHOLD && player_y > 20) {
+            
+            // Fix: Sirf ground par hi jump allow karega
+            if (drag < -SWIPE_THRESHOLD && player_y >= FLOOR_Y - player_h) {
                 if (is_ducking) player_y -= (normal_h - duck_h);
                 is_ducking = false; player_w = normal_w; player_h = normal_h;
                 vel_y = jump_power; playSound("thud");
                 if (!dev_mode) { dev_sequence.push("JUMP"); dev_sequence_timer = 1; }
-            } else if (drag > SWIPE_THRESHOLD) {
+            } 
+            else if (drag > SWIPE_THRESHOLD) {
                 vel_y = 40; is_ducking = true; duck_timer = DUCK_DURATION;
                 player_w = duck_w; player_h = duck_h;
                 if (!dev_mode) { dev_sequence.push("DUCK"); dev_sequence_timer = 1; }
@@ -448,7 +450,6 @@
         let closestObs = null;
         let minDist = Infinity;
         
-        // Find nearest obstacle ahead of AI player
         for (let obs of obstacles) {
             if (obs.x + obs.w > player_x) {
                 let dist = obs.x - (player_x + player_w);
@@ -521,6 +522,17 @@
             drawText("SHOP", btn_shop.x + btn_shop.w/2, btn_shop.y + btn_shop.h/2, 22, rgb(WHITE), "center");
             
             drawText(`COINS: ${coins}`, 20, 30, 16, rgb(GOLD));
+
+            drawText("TOP 5 LEADERBOARD", 650, 30, 16, rgb(GOLD), "center");
+            if (leaderboard.length === 0) {
+                drawText("Play to set a score!", 650, 60, 14, rgb(WHITE), "center");
+            } else {
+                for (let i = 0; i < leaderboard.length; i++) {
+                    let yPos = 60 + (i * 25);
+                    drawText(`${i+1}. ${leaderboard[i].name}`, 550, yPos, 14, rgb(WHITE), "left");
+                    drawText(`${leaderboard[i].score}`, 750, yPos, 14, rgb(equipped_color), "right");
+                }
+            }
 
         } else if (state === "SHOP") {
             ctx.fillStyle = rgb(MENU_BG); ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -643,7 +655,6 @@
             drawText(`SCORE: ${Math.floor(score)}`, 20, 30, 16, rgb(WHITE));
             drawText(`COINS: ${coins}`, 780, 30, 16, rgb(GOLD), "right");
 
-            // AI Controls Renderer
             if (is_ai_playing) {
                 drawText("🤖 AI AUTOPILOT ACTIVE 🤖", WIDTH/2, 60, 20, rgb([255, 0, 100]), "center");
                 drawText(`AI SPD: ${game_speed.toFixed(1)}`, WIDTH/2, 85, 16, rgb(WHITE), "center");
@@ -652,7 +663,6 @@
                 drawRoundRect(btn_dev_speed_up.x, btn_dev_speed_up.y, btn_dev_speed_up.w, btn_dev_speed_up.h, 8, rgb([50, 150, 50])); drawText("SPD+", btn_dev_speed_up.x + btn_dev_speed_up.w/2, btn_dev_speed_up.y + btn_dev_speed_up.h/2, 14, rgb(WHITE), "center");
                 drawRoundRect(btn_ai_exit.x, btn_ai_exit.y, btn_ai_exit.w, btn_ai_exit.h, 8, rgb([80, 80, 90])); drawText("EXIT AI", btn_ai_exit.x + btn_ai_exit.w/2, btn_ai_exit.y + btn_ai_exit.h/2, 14, rgb(WHITE), "center");
             } 
-            // Regular Dev Mode Renderer
             else if (dev_mode) {
                 drawText("DEV: GOD MODE ACTIVE", WIDTH/2, 70, 16, rgb(DEV_COLOR), "center");
                 drawText(`SPD: ${game_speed.toFixed(1)}`, WIDTH/2, 95, 16, rgb(WHITE), "center");
@@ -667,6 +677,11 @@
             drawText(is_ai_playing ? "AI FAILED!" : "WASTED", WIDTH/2, 150, 40, rgb(DANGER_COLOR), "center");
             drawText(`FINAL SCORE: ${Math.floor(score)}`, WIDTH/2, 220, 20, rgb(WHITE), "center");
             drawText("Tap anywhere to return to Menu", WIDTH/2, 300, 16, rgb(equipped_color), "center");
+            
+            drawText("TOP SCORES", WIDTH/2, 350, 16, rgb(GOLD), "center");
+            for (let i = 0; i < Math.min(3, leaderboard.length); i++) {
+                drawText(`${i+1}. ${leaderboard[i].name} - ${leaderboard[i].score}`, WIDTH/2, 380 + (i*20), 14, rgb(WHITE), "center");
+            }
         }
 
         requestAnimationFrame(loop);
